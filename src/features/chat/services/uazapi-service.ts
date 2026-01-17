@@ -1,21 +1,19 @@
 import { Chat, Message, User } from '../types';
 import { ChatService } from '../service';
 
-const BASE_URL = process.env.NEXT_PUBLIC_UAZAPI_BASE_URL;
-const INSTANCE_ID = process.env.NEXT_PUBLIC_UAZAPI_INSTANCE_ID;
-const TOKEN = process.env.NEXT_PUBLIC_UAZAPI_TOKEN;
+// Pointing to Local Proxy
+const BASE_URL = '/api/uazapi';
 
-// Helper headers
+// Token is now handled securely on the server-side proxy, 
+// no need to expose it here or send it from client.
 const headers = {
     'Content-Type': 'application/json',
-    'token': TOKEN || '',
 };
 
 export class UazapiChatService implements ChatService {
 
     async getChats(): Promise<Chat[]> {
-        if (!BASE_URL || !INSTANCE_ID || !TOKEN) return [];
-
+        // Auth handled by Proxy
         try {
             // Doc v2.0: GET /chats
             const response = await fetch(`${BASE_URL}/chats?limit=50&offset=0`, {
@@ -52,8 +50,7 @@ export class UazapiChatService implements ChatService {
     }
 
     async getMessages(chatId: string): Promise<Message[]> {
-        if (!BASE_URL || !INSTANCE_ID || !TOKEN) return [];
-
+        // Auth handled by Proxy
         try {
             const jid = chatId.includes('@') ? chatId : `${chatId}@s.whatsapp.net`;
             // Doc v2.0: GET /chat/messages

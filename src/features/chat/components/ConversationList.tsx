@@ -47,7 +47,7 @@ export function ConversationList({ chats, selectedChatId, onSelectChat }: Conver
                 <Button variant="secondary" size="sm" className="bg-green-100 text-green-700 hover:bg-green-200 dark:bg-green-900/30 dark:text-green-400">
                     Conversas abertas
                 </Button>
-                <span className="ml-auto text-xs text-muted-foreground self-center">Total: 301</span>
+                <span className="ml-auto text-xs text-muted-foreground self-center">Total: {chats.length}</span>
             </div>
 
             {/* List */}
