@@ -90,9 +90,10 @@ export class MockChatService implements ChatService {
     }
 }
 
-import { UazapiChatService } from "./services/uazapi-service"
+import { SupabaseChatService } from "./services/supabase-service"
 
 // Toggle this to switch between Mock and Real
 const USE_REAL_API = true;
 
-export const chatService = USE_REAL_API ? new UazapiChatService() : new MockChatService();
+// We now use the Supabase Service which handles both DB and API sending
+export const chatService = USE_REAL_API ? new SupabaseChatService() : new MockChatService();
