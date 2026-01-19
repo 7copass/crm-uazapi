@@ -6,54 +6,149 @@ import { ChatWindow } from "./ChatWindow"
 import { LeadDetailsSidebar } from "./LeadDetailsSidebar"
 import { chatService } from "../service"
 import { Chat, Message } from "../types"
+import { supabase } from "@/lib/supabase"
 
 export function ChatLayout() {
     const [chats, setChats] = React.useState<Chat[]>([])
     const [selectedChatId, setSelectedChatId] = React.useState<string | undefined>(undefined)
     const [messages, setMessages] = React.useState<Message[]>([])
+    const [isSending, setIsSending] = React.useState(false)
 
     // Load Chats (Poll every 10s)
     React.useEffect(() => {
         const fetchChats = () => {
-            chatService.getChats().then((data) => {
-                setChats(data)
-                // Initialize selection if needed
-                if (data.length > 0 && !selectedChatId) {
-                    // Don't auto-select if user hasn't selected anything yet, 
-                    // or maybe optional. For now keeping original logic but careful with loops.
-                    // Actually, better to only auto-select on first load, not every poll.
-                }
-            })
+            chatService.getChats().then(setChats)
         }
 
         fetchChats() // Initial fetch
         const interval = setInterval(fetchChats, 10000)
         return () => clearInterval(interval)
-    }, []) // Dependencies empty to run once on mount + interval
+    }, [])
 
-    // Auto-select first chat ONLY on initial empty state if desired, 
-    // but better to handle this separately to avoid overriding user selection.
+    // Auto-select first chat on initial load
     React.useEffect(() => {
         if (chats.length > 0 && !selectedChatId) {
             setSelectedChatId(chats[0].id)
         }
-    }, [chats.length]) // Only when chats list changes size/initially loaded
+    }, [chats.length, selectedChatId])
 
-    // Load Messages when chat is selected (Poll every 5s)
+    // Load Messages when chat is selected
     React.useEffect(() => {
         if (!selectedChatId) {
             setMessages([])
             return
         }
 
-        const fetchMessages = () => {
-            chatService.getMessages(selectedChatId).then(setMessages)
+        // Initial fetch
+        chatService.getMessages(selectedChatId).then(setMessages)
+    }, [selectedChatId])
+
+    // Supabase Realtime subscription for new messages
+    React.useEffect(() => {
+        if (!selectedChatId) return
+
+        const channel = supabase
+            .channel(`messages:${selectedChatId}`)
+            .on(
+                'postgres_changes',
+                {
+                    event: 'INSERT',
+                    schema: 'public',
+                    table: 'messages',
+                    filter: `chat_id=eq.${selectedChatId}`
+                },
+                (payload) => {
+                    console.log('🔔 New message received via Realtime:', payload.new)
+                    const newMsg = payload.new as {
+                        id: string
+                        chat_id: string
+                        sender_id: string
+                        content: string
+                        type: string
+                        created_at: string
+                    }
+
+                    // Only add if not already in the list (avoid duplicates from optimistic update)
+                    setMessages(prev => {
+                        const exists = prev.some(m => m.id === newMsg.id)
+                        if (exists) return prev
+
+                        return [...prev, {
+                            id: newMsg.id,
+                            chatId: newMsg.chat_id,
+                            senderId: newMsg.sender_id,
+                            content: newMsg.content,
+                            type: newMsg.type as 'text' | 'image' | 'audio',
+                            createdAt: newMsg.created_at,
+                            status: 'delivered'
+                        }]
+                    })
+                }
+            )
+            .subscribe()
+
+        return () => {
+            supabase.removeChannel(channel)
+        }
+    }, [selectedChatId])
+
+    // Realtime subscription for chat list updates
+    React.useEffect(() => {
+        const channel = supabase
+            .channel('chats:all')
+            .on(
+                'postgres_changes',
+                {
+                    event: '*',
+                    schema: 'public',
+                    table: 'chats'
+                },
+                () => {
+                    // Refresh chats list when any chat is updated
+                    chatService.getChats().then(setChats)
+                }
+            )
+            .subscribe()
+
+        return () => {
+            supabase.removeChannel(channel)
+        }
+    }, [])
+
+    // Handle sending messages with optimistic update
+    const handleSendMessage = async (content: string) => {
+        if (!selectedChatId || !content.trim() || isSending) return
+
+        setIsSending(true)
+
+        // Optimistic update - add message immediately to UI
+        const optimisticMessage: Message = {
+            id: `temp-${Date.now()}`,
+            chatId: selectedChatId,
+            senderId: 'me',
+            content: content,
+            type: 'text',
+            createdAt: new Date().toISOString(),
+            status: 'sending'
         }
 
-        fetchMessages() // Initial fetch
-        const interval = setInterval(fetchMessages, 5000)
-        return () => clearInterval(interval)
-    }, [selectedChatId])
+        setMessages(prev => [...prev, optimisticMessage])
+
+        try {
+            const savedMessage = await chatService.sendMessage(selectedChatId, content, 'me')
+
+            // Replace optimistic message with the real one
+            setMessages(prev =>
+                prev.map(m => m.id === optimisticMessage.id ? savedMessage : m)
+            )
+        } catch (error) {
+            console.error('Failed to send message:', error)
+            // Remove optimistic message on error
+            setMessages(prev => prev.filter(m => m.id !== optimisticMessage.id))
+        } finally {
+            setIsSending(false)
+        }
+    }
 
     const selectedChat = chats.find(c => c.id === selectedChatId) || null
 
@@ -67,6 +162,8 @@ export function ChatLayout() {
             <ChatWindow
                 chat={selectedChat}
                 messages={messages}
+                onSendMessage={handleSendMessage}
+                isSending={isSending}
             />
             {selectedChat && (
                 <div className="hidden xl:block">
@@ -79,4 +176,3 @@ export function ChatLayout() {
         </div>
     )
 }
-

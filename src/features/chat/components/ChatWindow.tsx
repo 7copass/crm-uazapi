@@ -14,9 +14,32 @@ import { Chat, Message } from "@/features/chat/types"
 interface ChatWindowProps {
     chat: Chat | null // null means no chat selected
     messages: Message[]
+    onSendMessage?: (content: string) => void
+    isSending?: boolean
 }
 
-export function ChatWindow({ chat, messages }: ChatWindowProps) {
+export function ChatWindow({ chat, messages, onSendMessage, isSending = false }: ChatWindowProps) {
+    const [inputValue, setInputValue] = React.useState('')
+    const messagesEndRef = React.useRef<HTMLDivElement>(null)
+
+    // Auto-scroll to bottom when new messages arrive
+    React.useEffect(() => {
+        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+    }, [messages])
+
+    const handleSend = () => {
+        if (!inputValue.trim() || isSending || !onSendMessage) return
+        onSendMessage(inputValue)
+        setInputValue('')
+    }
+
+    const handleKeyDown = (e: React.KeyboardEvent) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault()
+            handleSend()
+        }
+    }
+
     if (!chat) {
         return (
             <div className="flex flex-1 items-center justify-center bg-muted/10">
@@ -79,16 +102,20 @@ export function ChatWindow({ chat, messages }: ChatWindowProps) {
                 </div>
             </div>
 
-
             {/* Messages Area */}
-            <div className="flex-1 overflow-y-auto p-6 flex flex-col gap-6">
-                {/* Date Separator */}
-                <div className="flex items-center justify-center">
-                    <span className="bg-muted px-3 py-1 rounded-full text-xs text-muted-foreground">12 de Janeiro de 2026</span>
-                </div>
+            <div className="flex-1 overflow-y-auto p-6 flex flex-col gap-4">
+                {/* Date Separator - show today's date or first message date */}
+                {messages.length > 0 && (
+                    <div className="flex items-center justify-center">
+                        <span className="bg-muted px-3 py-1 rounded-full text-xs text-muted-foreground">
+                            {format(new Date(messages[0].createdAt), "d 'de' MMMM 'de' yyyy", { locale: ptBR })}
+                        </span>
+                    </div>
+                )}
 
                 {messages.map((message) => {
-                    const isMe = message.senderId.startsWith('agent') || message.senderId === 'me'
+                    const isMe = message.senderId === 'me' || message.senderId.startsWith('agent')
+                    const isSendingMsg = message.status === 'sending'
 
                     return (
                         <div key={message.id} className={`flex gap-3 ${isMe ? 'flex-row-reverse' : ''}`}>
@@ -102,14 +129,18 @@ export function ChatWindow({ chat, messages }: ChatWindowProps) {
                             <div className={`flex flex-col max-w-[70%] gap-1 ${isMe ? 'items-end' : 'items-start'}`}>
 
                                 <div className={`p-4 text-sm leading-relaxed shadow-sm relative group ${isMe
-                                        ? 'bg-green-50 rounded-2xl rounded-tr-none text-zinc-800 border-none dark:bg-green-900/40 dark:text-green-100'
-                                        : 'bg-white text-zinc-800 rounded-2xl rounded-tl-none border border-border dark:bg-zinc-900 dark:text-zinc-100'
-                                    }`}>
+                                    ? 'bg-green-50 rounded-2xl rounded-tr-none text-zinc-800 border-none dark:bg-green-900/40 dark:text-green-100'
+                                    : 'bg-white text-zinc-800 rounded-2xl rounded-tl-none border border-border dark:bg-zinc-900 dark:text-zinc-100'
+                                    } ${isSendingMsg ? 'opacity-70' : ''}`}>
                                     {message.content}
 
                                     <div className={`flex items-center gap-1 mt-1 ${isMe ? 'justify-end' : 'justify-end'}`}>
                                         <span className="text-[10px] text-muted-foreground/70">{format(new Date(message.createdAt), 'HH:mm')}</span>
-                                        {isMe && <Check className="h-3 w-3 text-green-500" />}
+                                        {isMe && (
+                                            isSendingMsg
+                                                ? <span className="text-[10px] text-muted-foreground/50">Enviando...</span>
+                                                : <Check className="h-3 w-3 text-green-500" />
+                                        )}
                                     </div>
                                 </div>
                             </div>
@@ -130,6 +161,9 @@ export function ChatWindow({ chat, messages }: ChatWindowProps) {
                     <div className="h-4 w-1 bg-yellow-400"></div> {/* Bolt icon placeholder */}
                     <span>Salesbot alterou o status para <strong>Em negociação</strong></span>
                 </div>
+
+                {/* Auto-scroll anchor */}
+                <div ref={messagesEndRef} />
             </div>
 
             {/* Input Area */}
@@ -157,13 +191,22 @@ export function ChatWindow({ chat, messages }: ChatWindowProps) {
                     </Button>
                     <Input
                         className="flex-1 bg-transparent border-none shadow-none focus-visible:ring-0 placeholder:text-muted-foreground/50 h-auto py-2 text-sm"
-                        placeholder="Escreva uma mensagem para Alan..."
+                        placeholder={`Escreva uma mensagem para ${chat.leadName}...`}
+                        value={inputValue}
+                        onChange={(e) => setInputValue(e.target.value)}
+                        onKeyDown={handleKeyDown}
+                        disabled={isSending}
                     />
                     <div className="flex items-center gap-1">
                         <Button variant="ghost" size="icon" className="text-zinc-400 hover:text-zinc-600">
                             <Smile className="h-5 w-5" />
                         </Button>
-                        <Button size="icon" className="bg-green-500 hover:bg-green-600 text-white rounded-xl h-10 w-10 shadow-sm shadow-green-500/20">
+                        <Button
+                            size="icon"
+                            className="bg-green-500 hover:bg-green-600 text-white rounded-xl h-10 w-10 shadow-sm shadow-green-500/20 disabled:opacity-50"
+                            onClick={handleSend}
+                            disabled={isSending || !inputValue.trim()}
+                        >
                             <Send className="h-5 w-5 ml-0.5" />
                         </Button>
                     </div>

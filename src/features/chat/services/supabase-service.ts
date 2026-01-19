@@ -66,9 +66,12 @@ export class SupabaseChatService implements ChatService {
         if (!chat) throw new Error('Chat not found');
 
         // 2. Send via UAZAPI Proxy
+        // Extract phone number from JID (e.g., "5511970636118@s.whatsapp.net" -> "5511970636118")
+        const phoneNumber = chat.uazapi_id.split('@')[0];
+
         const body = {
-            jid: chat.uazapi_id,
-            message: content
+            number: phoneNumber,
+            text: content
         };
 
         const response = await fetch(`${UAZAPI_PROXY_URL}/send/text`, {
@@ -80,20 +83,24 @@ export class SupabaseChatService implements ChatService {
         const apiData = await response.json();
 
         // 3. Save to Supabase (Optimistic / Confirmation)
+        const messageId = apiData.messageid || apiData.messageId || 'sent-' + Date.now()
+
         const { data: savedMsg, error } = await supabase
             .from('messages')
             .insert({
                 chat_id: chatId,
-                uazapi_message_id: apiData.messageId || 'temp-' + Date.now(),
+                uazapi_message_id: messageId,
                 sender_id: 'me',
                 content: content,
-                type: 'text',
-                status: 'sent'
+                type: 'text'
             })
             .select()
             .single();
 
-        if (error) console.error('Error saving message to Supabase:', error);
+        if (error) {
+            console.error('Error saving message to Supabase:', error);
+            throw error;
+        }
 
         // 4. Update Last Message in Chat
         await supabase
